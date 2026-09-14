@@ -36,7 +36,7 @@ Devin credentials are the only stored secret — every model call is plain HTTP,
 
 ## Why this exists
 
-`pi-devin-auth` treated Devin as Cascade cloud chat. Models like Sol High, Opus 5, and Fable 5 then failed with:
+Older packages treated Devin as Cascade cloud chat. Models like Sol High, Opus 5, and Fable 5 then failed with:
 
 ```text
 This model is only in Devin Local.
