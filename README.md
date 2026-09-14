@@ -1,12 +1,38 @@
 # pi-devin-local
 
-[English](README.md) | [简体中文](README_zh.md)
+Devin Local models in [Pi](https://pi.dev). Auth comes from the local Devin CLI / Devin Desktop session and the model catalog from the live `GetCliModelConfigs` RPC.
 
-A [Pi](https://pi.dev) package that uses **Devin Local** models inside Pi.
+> Fork of [`kashyab12/pi-devin`](https://github.com/kashyab12/pi-devin) (npm `pi-devin`). Do not install both: they register the same `devin` provider.
 
-Pi stays the harness. The [Devin CLI](https://docs.devin.ai/cli) owns login and the live model catalog (`devin auth`, `devin models list`). This is not an ACP integration and does not use Zed.
+## How it works
 
-> Fork of [`kashyab12/pi-devin`](https://github.com/kashyab12/pi-devin) (npm `pi-devin`) with fixes that upstream does not carry yet — see [What this fork changes](#what-this-fork-changes). Do not install both: they register the same `devin` provider.
+Devin credentials are the only stored secret — every model call is plain HTTP, no OpenAI-compat layer.
+
+```text
+  ~/.local/share/devin/credentials.toml        (windsurf_api_key — written by `devin auth login`)
+        │
+        │  /login devin  (only when the file is missing: spawn `devin auth login`,
+        │                or reuse a signed-in Devin Desktop token)
+        ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ Model request  (per chat message)                           │
+  │                                                             │
+  │  POST {api_server_url}/exa.api_server_pb.ApiServerService/  │
+  │       GetChatMessage                                        │
+  │   • Metadata.api_key (field 3)  ← the windsurf_api_key      │
+  │   • Metadata.user_jwt (field 21) ← minted via GetUserJwt    │
+  │     (api key → GetUserJwt → 15-min JWT; cloud models work   │
+  │      with the api key alone, JWT carries plan/entitlement)  │
+  │   • system prompt (2), history (3), tools (10), config (8), │
+  │     chat_model_uid (21) e.g. "swe-1-7-medium"               │
+  │   • Connect RPC + protobuf (application/connect+proto,      │
+  │     gzip framing) — NOT an OpenAI-compatible endpoint       │
+  └─────────────────────────────────────────────────────────────┘
+        ▲
+        │  model list: GetCliModelConfigs over HTTP (ide=windsurf),
+        │  `devin models list` only as fallback
+        └─ never spawns the CLI during normal chat
+```
 
 ## Why this exists
 
@@ -16,20 +42,13 @@ Pi stays the harness. The [Devin CLI](https://docs.devin.ai/cli) owns login and 
 This model is only in Devin Local.
 ```
 
-Those models are available through the local Devin CLI. This package uses that CLI for auth + catalog, then streams completions into Pi so Pi's tools, sessions, and UI stay in charge.
+Those models are only reachable through the local Devin surface. This package reuses that local credential, then streams completions into Pi so Pi's tools, sessions, and UI stay in charge — it is not an ACP integration and does not use Zed.
 
 ## Requirements
 
-- Pi Coding Agent 0.80+
-- A signed-in [Devin CLI](https://docs.devin.ai/cli) (`devin auth status`), or a signed-in Devin Desktop
-- Node 18+
-
-The CLI binary is resolved in this order:
-
-1. `$DEVIN_CLI`
-2. `~/.local/bin/devin`, Homebrew, `/usr/local/bin/devin`
-3. Devin.app's bundled `devin` binary
-4. `which devin`
+- [Devin CLI](https://docs.devin.ai/cli) installed (or bundled with Devin Desktop)
+- Signed in: `devin auth login`, or a signed-in Devin Desktop on this machine
+- Pi Coding Agent — `@earendil-works/pi-ai` and `@earendil-works/pi-coding-agent` are peer deps
 
 ## Install
 
@@ -43,9 +62,7 @@ Local checkout:
 pi install ~/Developers/pi-devin
 ```
 
-Restart Pi or run `/reload`. The Chinese README is at [README_zh.md](README_zh.md) (named without a dot so npm keeps English as the package page default).
-
-Upstream is `npm:pi-devin`; it does not carry this fork's fixes and must not be installed alongside this one.
+Restart Pi or run `/reload`.
 
 ## Usage
 
@@ -81,47 +98,7 @@ and turns.
 Commands:
 
 - `/devin-status` — CLI path, version, auth
-- `/devin-refresh` — reload `devin models list --format json`
-
-## What this is / is not
-
-| This package | Not this package |
-|---|---|
-| Pi is the agent | Devin taking over the session |
-| Devin CLI for auth + catalog | Fake Windsurf OAuth paste flow |
-| Live CLI families (Opus 5, Fable 5, Sol, …) | Hardcoded 11-model cloud allowlist |
-| Completions streamed into Pi tools | An editor host for Devin |
-
-## What this fork changes
-
-Everything upstream does, plus:
-
-- **Reuses a Devin Desktop sign-in.** Desktop keeps its token in the Electron
-  state DB, so the CLI store stayed empty and `/login devin` opened a browser for
-  an account that was already signed in. The store is now seeded from
-  `windsurfAuthStatus` when it is missing.
-- **One model per family, thinking levels via Pi.** `devin/swe-2` + `/thinking max`
-  sends `swe-2-max`; levels a family does not ship are hidden instead of silently
-  falling back to the default variant.
-- **Thinking round-trips.** The server's thinking summary, its sealed signature and
-  the redacted flag are kept on the block and replayed on the next request, like
-  the Devin CLI does, so the model keeps its own prior reasoning.
-- **Request shape aligned with the Devin CLI.** System prompt in the server's
-  system slot, matching sampling configuration, trajectory reference and planner
-  mode, no stray `execution_id`.
-
-## Publish
-
-```bash
-bun run typecheck
-npm publish --access public
-```
-
-This is a standard Pi package (`keywords: ["pi-package"]` + `pi.extensions`).
-Once it is on npm with that keyword it is picked up by the
-[package gallery](https://pi.dev/packages) within minutes — there is no separate
-submission step, and pi has no official namespace for third-party extensions.
-If it does not show up, bump the version and publish again to force re-indexing.
+- `/devin-refresh` — reload the model catalog
 
 ## License
 
