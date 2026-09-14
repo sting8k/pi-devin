@@ -258,7 +258,13 @@ function decodeUsage(buf: Buffer): CloudChatEvent | null {
     kind: "usage",
     promptTokens,
     completionTokens,
-    totalTokens: (promptTokens ?? 0) + (completionTokens ?? 0),
+    // pi-ai convention: input is the non-cached portion, so total includes
+    // cacheRead/cacheWrite (same as the Anthropic/OpenAI providers).
+    totalTokens:
+      (promptTokens ?? 0) +
+      (completionTokens ?? 0) +
+      (cachedInputTokens ?? 0) +
+      (cacheCreationInputTokens ?? 0),
     cachedInputTokens,
     cacheCreationInputTokens,
   };
@@ -573,7 +579,9 @@ export function streamDevin(
           output.usage.output = event.completionTokens ?? 0;
           output.usage.cacheRead = event.cachedInputTokens ?? 0;
           output.usage.cacheWrite = event.cacheCreationInputTokens ?? 0;
-          output.usage.totalTokens = event.totalTokens ?? output.usage.input + output.usage.output;
+          output.usage.totalTokens =
+            event.totalTokens ??
+            output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
           calculateCost(model, output.usage);
         }
       }

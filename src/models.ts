@@ -36,12 +36,13 @@ function parseCost(summary?: string): ProviderModelConfig["cost"] {
   if (!summary) return empty;
   const input = summary.match(/\$([0-9.]+)\s*\/\s*(?:MTok|1M)\s*In/i);
   const output = summary.match(/\$([0-9.]+)\s*\/\s*(?:MTok|1M)\s*Out/i);
+  const cached = summary.match(/\$([0-9.]+)\s*\/\s*(?:MTok|1M)\s*Cached/i);
   const inCost = input ? Number(input[1]) : 0;
   const outCost = output ? Number(output[1]) : 0;
   return {
     input: inCost,
     output: outCost,
-    cacheRead: Number((inCost * 0.1).toFixed(4)),
+    cacheRead: cached ? Number(cached[1]) : Number((inCost * 0.1).toFixed(4)),
     cacheWrite: Number((inCost * 1.25).toFixed(4)),
   };
 }
