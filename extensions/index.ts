@@ -2,6 +2,7 @@ import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-codin
 import type { Api, Model, OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import { authStatus, ensureCredentials, loginWithCli, readCredentials } from "../src/credentials.js";
 import { readDevinDesktopApiKey } from "../src/desktop-auth.js";
+import { getCachedUserJwt } from "../src/jwt.js";
 import { whichDevin, devinVersion } from "../src/cli.js";
 import { FALLBACK_MODELS, loadCatalog, modelsFromCatalog } from "../src/models.js";
 import { CLIENT_IDE, CLIENT_VERSION } from "../src/metadata.js";
@@ -61,6 +62,26 @@ let _catalogLoaded = false;
 let _catalogRefresh: Promise<void> | null = null;
 
 /**
+ * Warm the JWT cache and the TLS connection in the background so the first
+ * message of a session skips the ~650ms JWT mint and ~190ms handshake.
+ */
+function prewarmConnection(): void {
+  void (async () => {
+    try {
+      const creds = readCredentials();
+      if (!creds) return;
+      await getCachedUserJwt(creds.apiKey, creds.apiServerUrl);
+      await fetch(`${creds.apiServerUrl.replace(/\/$/, "")}/`, {
+        method: "HEAD",
+        signal: AbortSignal.timeout(10_000),
+      }).catch(() => {});
+    } catch {
+      // best effort — a failed prewarm just means the first message pays it
+    }
+  })();
+}
+
+/**
  * Refresh the live catalog without blocking init. Spawning `devin models list`
  * can take seconds (up to its 20s timeout) on a slow CLI or network, so the
  * provider starts on FALLBACK_MODELS and is re-registered once this finishes.
@@ -87,11 +108,13 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   _pi = pi;
   registerDevinProvider(pi, FALLBACK_MODELS);
   refreshCatalogInBackground();
+  prewarmConnection();
 
   pi.on("session_start", () => {
     // Retry only while the live catalog never loaded (e.g. credentials showed
     // up after init). Once loaded, don't re-spawn the CLI on every session.
     if (!_catalogLoaded) refreshCatalogInBackground();
+    prewarmConnection();
   });
 
   pi.registerCommand("devin-status", {

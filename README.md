@@ -95,6 +95,20 @@ summary together with its signature and replays both on the next request, exactl
 like the Devin CLI, so the model keeps its own prior reasoning across tool calls
 and turns.
 
+### Latency: hedged SWE requests (`DEVIN_HEDGE`)
+
+SWE models (`swe-2`, `swe-1.7`, …) fire three identical `GetChatMessage`
+requests by default and keep the first answer; the losers are aborted. On
+SWE-2 this cuts time-to-first-token from ~10-15s to ~3.3-4s when the fleet is
+loaded, and changes nothing when it is idle. SWE models bill $0, so the
+duplicates are free. Every other family sends a single request, where
+duplicates would be billed.
+
+`DEVIN_HEDGE=1..5` overrides this for all models — `1` restores the plain
+single-request behaviour. The provider also pre-warms the user JWT and TLS
+connection at startup and session start, so the first message skips the
+~0.85s of cold-start cost.
+
 Commands:
 
 - `/devin-status` — CLI path, version, auth

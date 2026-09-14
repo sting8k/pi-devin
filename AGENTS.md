@@ -12,6 +12,7 @@ src/desktop-auth.ts   # reuse a Devin Desktop sign-in when the CLI store is miss
 src/models.ts         # GetCliModelConfigs RPC → DevinCatalog → ProviderModelConfig[] (`devin models list` as fallback)
 src/thinking.ts       # thinking summary + sealed signature round-trip
 src/stream.ts         # streamSimple via GetChatMessage (Connect/protobuf)
+src/hedge.ts          # DEVIN_HEDGE=N race: N identical requests, first to emit wins
 src/jwt.ts            # GetUserJwt cache
 src/metadata.ts       # Metadata proto (Windsurf/Devin Desktop version gate)
 src/wire.ts           # protobuf + Connect framing
