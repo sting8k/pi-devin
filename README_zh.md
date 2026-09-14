@@ -33,16 +33,8 @@ CLI 可执行文件的查找顺序：
 
 ## 安装
 
-从 npm（已收录在[官方包目录](https://pi.dev/packages)）：
-
 ```bash
-pi install npm:pi-devin-local
-```
-
-从 git：
-
-```bash
-pi install git:github.com/mizorewww/pi-devin
+pi install git:github.com/sting8k/pi-devin
 ```
 
 本地仓库：

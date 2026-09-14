@@ -33,16 +33,8 @@ The CLI binary is resolved in this order:
 
 ## Install
 
-From npm (listed in the [package gallery](https://pi.dev/packages)):
-
 ```bash
-pi install npm:pi-devin-local
-```
-
-From git:
-
-```bash
-pi install git:github.com/mizorewww/pi-devin
+pi install git:github.com/sting8k/pi-devin
 ```
 
 Local checkout:
