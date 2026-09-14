@@ -26,6 +26,7 @@ function registerDevinProvider(pi: ExtensionAPI, models: ProviderModelConfig[]):
           try {
             const catalog = await loadCliCatalog();
             registerDevinProvider(_pi, modelsFromCatalog(catalog));
+            _catalogLoaded = true;
           } catch {
             // keep current models
           }
@@ -56,28 +57,40 @@ function registerDevinProvider(pi: ExtensionAPI, models: ProviderModelConfig[]):
   });
 }
 
+let _catalogLoaded = false;
+let _catalogRefresh: Promise<void> | null = null;
+
+/**
+ * Refresh the live catalog without blocking init. Spawning `devin models list`
+ * can take seconds (up to its 20s timeout) on a slow CLI or network, so the
+ * provider starts on FALLBACK_MODELS and is re-registered once this finishes.
+ */
+function refreshCatalogInBackground(): void {
+  if (_catalogRefresh) return;
+  _catalogRefresh = (async () => {
+    try {
+      if (!_pi || !(await ensureCredentials())) return;
+      const catalog = await loadCliCatalog();
+      if (!_pi) return;
+      registerDevinProvider(_pi, modelsFromCatalog(catalog));
+      _catalogLoaded = true;
+    } catch {
+      // keep current models
+    } finally {
+      _catalogRefresh = null;
+    }
+  })();
+}
+
 export default async function (pi: ExtensionAPI): Promise<void> {
   _pi = pi;
   registerDevinProvider(pi, FALLBACK_MODELS);
+  refreshCatalogInBackground();
 
-  try {
-    if (await ensureCredentials()) {
-      const catalog = await loadCliCatalog();
-      registerDevinProvider(pi, modelsFromCatalog(catalog));
-    }
-  } catch {
-    // fallback models already registered
-  }
-
-  pi.on("session_start", async () => {
-    try {
-      if (!_pi) return;
-      if (!(await ensureCredentials())) return;
-      const catalog = await loadCliCatalog();
-      registerDevinProvider(_pi, modelsFromCatalog(catalog));
-    } catch {
-      // keep current models
-    }
+  pi.on("session_start", () => {
+    // Retry only while the live catalog never loaded (e.g. credentials showed
+    // up after init). Once loaded, don't re-spawn the CLI on every session.
+    if (!_catalogLoaded) refreshCatalogInBackground();
   });
 
   pi.registerCommand("devin-status", {
