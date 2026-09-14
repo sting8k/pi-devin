@@ -3,7 +3,7 @@ import type { Api, Model, OAuthCredentials, OAuthLoginCallbacks } from "@earendi
 import { authStatus, ensureCredentials, loginWithCli, readCredentials } from "../src/credentials.js";
 import { readDevinDesktopApiKey } from "../src/desktop-auth.js";
 import { whichDevin, devinVersion } from "../src/cli.js";
-import { FALLBACK_MODELS, loadCliCatalog, modelsFromCatalog } from "../src/models.js";
+import { FALLBACK_MODELS, loadCatalog, modelsFromCatalog } from "../src/models.js";
 import { CLIENT_IDE, CLIENT_VERSION } from "../src/metadata.js";
 import { streamDevin } from "../src/stream.js";
 
@@ -24,7 +24,7 @@ function registerDevinProvider(pi: ExtensionAPI, models: ProviderModelConfig[]):
         const creds = await loginWithCli();
         if (_pi) {
           try {
-            const catalog = await loadCliCatalog();
+            const catalog = await loadCatalog(creds);
             registerDevinProvider(_pi, modelsFromCatalog(catalog));
             _catalogLoaded = true;
           } catch {
@@ -69,8 +69,9 @@ function refreshCatalogInBackground(): void {
   if (_catalogRefresh) return;
   _catalogRefresh = (async () => {
     try {
-      if (!_pi || !(await ensureCredentials())) return;
-      const catalog = await loadCliCatalog();
+      const creds = await ensureCredentials();
+      if (!_pi || !creds) return;
+      const catalog = await loadCatalog(creds);
       if (!_pi) return;
       registerDevinProvider(_pi, modelsFromCatalog(catalog));
       _catalogLoaded = true;
@@ -119,13 +120,13 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   });
 
   pi.registerCommand("devin-refresh", {
-    description: "Refresh Devin Local model catalog from `devin models list`",
+    description: "Refresh the Devin Local model catalog (HTTP, CLI fallback)",
     handler: async (_args, ctx) => {
       try {
-        const catalog = await loadCliCatalog();
+        const catalog = await loadCatalog(await ensureCredentials());
         const models = modelsFromCatalog(catalog);
         registerDevinProvider(pi, models);
-        ctx.ui.notify(`Devin: loaded ${models.length} families from the local CLI.`, "info");
+        ctx.ui.notify(`Devin: loaded ${models.length} families.`, "info");
       } catch (error) {
         ctx.ui.notify(
           `Devin refresh failed: ${error instanceof Error ? error.message : String(error)}`,

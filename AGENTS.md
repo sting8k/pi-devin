@@ -9,7 +9,7 @@ extensions/index.ts   # registerProvider("devin"), /login, /devin-status, /devin
 src/cli.ts            # locate + spawn `devin`
 src/credentials.ts    # ~/.local/share/devin/credentials.toml
 src/desktop-auth.ts   # reuse a Devin Desktop sign-in when the CLI store is missing
-src/models.ts         # `devin models list --format json` → ProviderModelConfig[]
+src/models.ts         # GetCliModelConfigs RPC → DevinCatalog → ProviderModelConfig[] (`devin models list` as fallback)
 src/thinking.ts       # thinking summary + sealed signature round-trip
 src/stream.ts         # streamSimple via GetChatMessage (Connect/protobuf)
 src/jwt.ts            # GetUserJwt cache
@@ -21,7 +21,7 @@ src/context-map.ts    # Pi Context → Cognition chat history (+ system prompt f
 ## Contract
 
 - `/login devin` must call `devin auth login` when no local credential exists. Reusing the session token a signed-in Devin Desktop already stores on disk is allowed; a custom paste/device flow is not.
-- Model IDs must come from `devin models list`, not a hardcoded cloud allowlist.
+- Model IDs must come from the live catalog — `ApiServerService/GetCliModelConfigs` over Connect/protobuf (same RPC as `devin models list`; requires ide `windsurf` in Metadata — `devin-desktop` gets a 1-entry gated list), with `devin models list` as fallback. Never a hardcoded cloud allowlist.
 - One pi model per Devin family: the id is the family slug and pi's thinking level picks the variant (`swe-2` + `max` → `swe-2-max`). Never bake a level into the model id.
 - Levels a family does not ship must be `null` in `thinkingLevelMap`, so pi hides them instead of silently falling back.
 - The request must mirror the Devin CLI: system prompt in `GetChatMessageRequest.prompt` (2) — never collapsed into the first user turn; `configuration` (8) = num_completions 1, max_tokens, max_newlines 400, temperature 1.0, top_k 40, top_p 0.95; `trajectory_reference` (15) = own uuid + CASCADE/USER_INPUT; `planner_mode` (20) = DEFAULT; `chat_model_uid` (21). Do not set `execution_id` (22) — the CLI leaves it empty.
