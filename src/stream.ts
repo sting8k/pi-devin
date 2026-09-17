@@ -15,7 +15,6 @@ import { getCachedUserJwt } from "./jwt.js";
 import { buildMetadata } from "./metadata.js";
 import { resolveModelUid } from "./models.js";
 import { packThinkingSignature, type ChatThinking } from "./thinking.js";
-import { firstToEmit } from "./hedge.js";
 import {
   encodeFixed64Field,
   encodeMessage,
@@ -289,25 +288,6 @@ function sessionIds(apiKey: string, host: string) {
   return ids;
 }
 
-/**
- * Hedged requests: fire several identical GetChatMessage requests, keep the
- * first answer, abort the rest (see src/hedge.ts).
- *
- * Default: 3 for the SWE family (`swe-2`, `swe-1.7`, …) — measured on
- * swe-2-high the winner lands in ~3.3-4s under load where a single request
- * waits 10-15s, and SWE models bill $0 so the duplicates are free. Every
- * other family stays single-request (duplicates are billed there).
- * DEVIN_HEDGE=1..5 overrides for all models; 1 disables.
- */
-export function hedgeCount(modelUid: string): number {
-  const raw = process.env.DEVIN_HEDGE;
-  if (raw !== undefined) {
-    const n = Math.floor(Number(raw));
-    return Number.isFinite(n) && n >= 1 && n <= 5 ? n : 1;
-  }
-  return modelUid.startsWith("swe") ? 3 : 1;
-}
-
 async function* streamChatEvents(args: {
   apiKey: string;
   host: string;
@@ -317,12 +297,10 @@ async function* streamChatEvents(args: {
   tools?: ToolDef[];
   maxOutputTokens?: number;
   signal?: AbortSignal;
-  /** Hedged requests pass their own ids so the server sees independent cascades. */
-  idsOverride?: SessionIds;
 }): AsyncGenerator<CloudChatEvent> {
   const host = args.host.replace(/\/$/, "");
   const userJwt = await getCachedUserJwt(args.apiKey, host, args.signal);
-  const ids = args.idsOverride ?? sessionIds(args.apiKey, host);
+  const ids = sessionIds(args.apiKey, host);
   const proto = buildGetChatMessageRequest({
     apiKey: args.apiKey,
     userJwt,
@@ -529,52 +507,18 @@ export function streamDevin(
       const mapped = mapContextToChat(context);
       stream.push({ type: "start", partial: output });
 
-      // DEVIN_HEDGE>1 fans out identical requests and races them; the first
-      // stream to emit wins and the losers are aborted (see src/hedge.ts).
-      const hedge = hedgeCount(modelUid);
-      const events = async function* (): AsyncGenerator<CloudChatEvent> {
-        const base = {
-          apiKey,
-          host,
-          modelUid,
-          systemPrompt: mapped.systemPrompt,
-          messages: mapped.messages,
-          tools: mapped.tools.length > 0 ? mapped.tools : undefined,
-          maxOutputTokens: options?.maxTokens,
-        };
-        if (hedge <= 1) {
-          yield* streamChatEvents({ ...base, signal: options?.signal });
-          return;
-        }
-        const controllers = Array.from({ length: hedge }, () => new AbortController());
-        const onParentAbort = () => {
-          for (const controller of controllers) controller.abort();
-        };
-        options?.signal?.addEventListener("abort", onParentAbort, { once: true });
-        const gens = controllers.map((controller) =>
-          streamChatEvents({
-            ...base,
-            signal: controller.signal,
-            idsOverride: { sessionId: randomUUID(), cascadeId: randomUUID(), trajectoryId: randomUUID() },
-          }),
-        );
-        const stopLosers = (winner: number) => {
-          controllers.forEach((controller, i) => {
-            if (i !== winner) controller.abort();
-          });
-          gens.forEach((gen, i) => {
-            if (i !== winner) gen.return(undefined as never).catch(() => {});
-          });
-        };
-        try {
-          yield* firstToEmit(gens, stopLosers);
-        } finally {
-          options?.signal?.removeEventListener("abort", onParentAbort);
-          for (const controller of controllers) controller.abort();
-        }
-      }
+      const events = streamChatEvents({
+        apiKey,
+        host,
+        modelUid,
+        systemPrompt: mapped.systemPrompt,
+        messages: mapped.messages,
+        tools: mapped.tools.length > 0 ? mapped.tools : undefined,
+        maxOutputTokens: options?.maxTokens,
+        signal: options?.signal,
+      });
 
-      for await (const event of events()) {
+      for await (const event of events) {
         if (event.kind === "text") {
           closeThinking();
           if (!textOpen) {

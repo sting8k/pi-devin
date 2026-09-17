@@ -1,7 +1,7 @@
 /**
- * E2E: run the real streamDevin path (GetChatMessage → pi event stream) with
- * DEVIN_HEDGE=3 and print per-event timing. Run as:
- *   DEVIN_HEDGE=3 npx tsx probe/e2e.ts
+ * E2E: run the real streamDevin path (GetChatMessage → pi event stream) and
+ * print per-event timing. Run as:
+ *   npx tsx probe/e2e.ts
  */
 import type { Api, Context, Model } from "@earendil-works/pi-ai";
 import { readCredentials } from "../src/credentials.js";
